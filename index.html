@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIRAS Snake</title>
+<style>
+  /* ===== MIRAS-huisstijl ===== */
+  :root {
+    --miras-zwart:   #000000;
+    --miras-oranje:  #EA5B0C;
+    --miras-rood:    #E63329;
+    --miras-lila:    #DBBFDD;
+    --miras-oranjegeel: #F39200;
+    --miras-mint:    #89CCCA;
+    --miras-geel:    #FFCC00;
+    --miras-blauw:   #006EB6;
+    --achtergrond:   #FBF9F6; /* licht en rustig */
+    --veld:          #FFFFFF;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    background: var(--achtergrond);
+    color: var(--miras-zwart);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  /* ===== Kop ===== */
+  header { text-align: center; margin-bottom: 16px; }
+
+  h1 {
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  h1 span { color: var(--miras-oranje); }
+
+  .tagline {
+    font-size: 1rem;
+    color: #444;
+    margin-top: 4px;
+  }
+
+  /* ===== Scorebalk ===== */
+  .scorebalk {
+    display: flex;
+    gap: 28px;
+    margin-bottom: 12px;
+    font-size: 1.05rem;
+  }
+  .scorebalk strong { color: var(--miras-oranje); font-size: 1.2rem; }
+
+  /* ===== Speelveld ===== */
+  .speelveld-wrap { position: relative; }
+
+  canvas {
+    background: var(--veld);
+    border: 3px solid var(--miras-zwart);
+    border-radius: 12px;
+    display: block;
+  }
+
+  /* ===== Overlays (start en game over) ===== */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(251, 249, 246, 0.96);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 40px;
+    gap: 16px;
+  }
+  .overlay.verborgen { display: none; }
+
+  .overlay h2 { font-size: 1.8rem; }
+  .overlay p { max-width: 420px; line-height: 1.5; color: #333; }
+
+  .overlay .punten-uitleg {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 18px;
+    font-size: 0.95rem;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    background: var(--miras-oranje);
+    border: none;
+    border-radius: 999px;
+    padding: 14px 34px;
+    cursor: pointer;
+    transition: transform 0.1s ease, background 0.15s ease;
+  }
+  button:hover { background: #c94d09; transform: scale(1.04); }
+  button:focus-visible { outline: 3px solid var(--miras-zwart); outline-offset: 2px; }
+
+  /* ===== Feedbackbericht tijdens het spel ===== */
+  .feedback {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--miras-zwart);
+    color: #fff;
+    padding: 8px 18px;
+    border-radius: 999px;
+    font-size: 0.95rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    white-space: nowrap;
+  }
+  .feedback.zichtbaar { opacity: 1; }
+
+  /* ===== Uitleg onder het veld ===== */
+  .uitleg {
+    margin-top: 14px;
+    font-size: 0.9rem;
+    color: #555;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MIRAS <span>Snake</span></h1>
+  <p class="tagline">Vang cursisten, boeken en diploma's en laat MIRAS groeien</p>
+</header>
+
+<div class="scorebalk">
+  <div>Score: <strong id="score">0</strong></div>
+  <div>Level: <strong id="level">1</strong></div>
+  <div>Topscore: <strong id="topscore">0</strong></div>
+</div>
+
+<div class="speelveld-wrap">
+  <canvas id="spel" width="600" height="600"></canvas>
+
+  <!-- Feedbackbericht -->
+  <div class="feedback" id="feedback"></div>
+
+  <!-- Startscherm -->
+  <div class="overlay" id="startscherm">
+    <h2>Klaar om te groeien?</h2>
+    <p>Bij MIRAS groeien we elke dag. Vang cursisten, boeken en diploma's en laat MIRAS groeien. Maar opgelet: hoe groter we worden, hoe behendiger jij moet zijn.</p>
+    <div class="punten-uitleg" id="punten-uitleg"></div>
+    <p>Beweeg met de pijltjestoetsen.</p>
+    <button id="startknop">Start met groeien</button>
+  </div>
+
+  <!-- Game-overscherm -->
+  <div class="overlay verborgen" id="gameoverscherm">
+    <h2 id="gameover-titel">Oeps, gebotst.</h2>
+    <p id="gameover-tekst"></p>
+    <button id="opnieuwknop">Nog eens!</button>
+  </div>
+</div>
+
+<p class="uitleg">Tip: een diploma 🎓 is 20 punten waard. Daarvoor maak je graag een omweg.</p>
+
+<script>
+/* =========================================================
+   MIRAS-OBJECTEN
+   Voeg hier makkelijk nieuwe objecten toe of pas ze aan.
+   - emoji: het icoon op het veld
+   - naam: gebruikt in feedbackteksten
+   - punten: score per vangst
+   - kleur: zachte cirkel achter het icoon (secundair palet)
+   - bericht: korte feedback bij het vangen
+   ========================================================= */
+const OBJECTEN = [
+  { emoji: "👩‍🎓", naam: "Cursist",          punten: 10, kleur: "#DBBFDD", bericht: "Welkom, nieuwe cursist!" },
+  { emoji: "📚",   naam: "Boek",             punten: 5,  kleur: "#FFCC00", bericht: "Kennis is macht!" },
+  { emoji: "💻",   naam: "Laptop",           punten: 10, kleur: "#006EB6", bericht: "Digitaal mee!" },
+  { emoji: "🎓",   naam: "Diploma",          punten: 20, kleur: "#F39200", bericht: "Proficiat, een diploma!" },
+  { emoji: "🧑‍🍳", naam: "Horeca",           punten: 15, kleur: "#E63329", bericht: "De keuken draait op volle toeren!" },
+  { emoji: "🧸",   naam: "Kinderbegeleiding", punten: 15, kleur: "#89CCCA", bericht: "De kleinsten zijn in goede handen!" },
+  { emoji: "🩺",   naam: "Zorg",             punten: 15, kleur: "#DBBFDD", bericht: "Zorgen doen we samen!" },
+  { emoji: "🗣️",  naam: "Talen / NT2",      punten: 15, kleur: "#89CCCA", bericht: "Nog een taal erbij!" }
+];
+
+/* ===== Levelsysteem: tempo per level (ms per stap) ===== */
+const LEVELS = [
+  { vanaf: 0,  snelheid: 180 }, // level 1: traag
+  { vanaf: 5,  snelheid: 145 }, // level 2: iets sneller
+  { vanaf: 10, snelheid: 115 }, // level 3: sneller
+  { vanaf: 15, snelheid: 90 }   // level 4: snel
+];
+
+/* ===== Instellingen speelveld ===== */
+const CEL = 24;                       // grootte van één vakje
+const KOLOMMEN = 25, RIJEN = 25;      // 25 x 25 raster (600 x 600 px)
+
+/* ===== Elementen ophalen ===== */
+const canvas = document.getElementById("spel");
+const ctx = canvas.getContext("2d");
+const scoreEl = document.getElementById("score");
+const levelEl = document.getElementById("level");
+const topscoreEl = document.getElementById("topscore");
+const feedbackEl = document.getElementById("feedback");
+const startscherm = document.getElementById("startscherm");
+const gameoverscherm = document.getElementById("gameoverscherm");
+const gameoverTitel = document.getElementById("gameover-titel");
+const gameoverTekst = document.getElementById("gameover-tekst");
+
+/* ===== Spelstatus ===== */
+let slang, richting, volgendeRichting, object, score, gevangen, level, topscore = 0;
+let bezig = false;
+let timer = null;
+let feedbackTimer = null;
+
+/* ===== Puntenuitleg op het startscherm vullen ===== */
+document.getElementById("punten-uitleg").innerHTML =
+  OBJECTEN.map(o => `<span>${o.emoji} ${o.naam}: +${o.punten}</span>`).join("");
+
+/* ===== Hulpfuncties ===== */
+
+// Toon kort een feedbackbericht boven het veld
+function toonFeedback(tekst) {
+  feedbackEl.textContent = tekst;
+  feedbackEl.classList.add("zichtbaar");
+  clearTimeout(feedbackTimer);
+  feedbackTimer = setTimeout(() => feedbackEl.classList.remove("zichtbaar"), 1400);
+}
+
+// Plaats een willekeurig object op een vrij vakje
+function nieuwObject() {
+  let positie;
+  do {
+    positie = {
+      x: Math.floor(Math.random() * KOLOMMEN),
+      y: Math.floor(Math.random() * RIJEN)
+    };
+  } while (slang.some(s => s.x === positie.x && s.y === positie.y));
+
+  const type = OBJECTEN[Math.floor(Math.random() * OBJECTEN.length)];
+  object = { ...positie, ...type };
+}
+
+// Bepaal het level op basis van het aantal gevangen objecten
+function bepaalLevel() {
+  let nieuwLevel = 1;
+  LEVELS.forEach((l, i) => { if (gevangen >= l.vanaf) nieuwLevel = i + 1; });
+  return nieuwLevel;
+}
+
+// Pas het tempo aan bij een levelsprong
+function controleerLevel() {
+  const nieuwLevel = bepaalLevel();
+  if (nieuwLevel > level) {
+    level = nieuwLevel;
+    levelEl.textContent = level;
+    toonFeedback(`Level ${level}! MIRAS draait op volle toeren.`);
+    clearInterval(timer);
+    timer = setInterval(stap, LEVELS[level - 1].snelheid);
+  }
+}
+
+/* ===== Tekenen ===== */
+function teken() {
+  // Veld leegmaken
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Object: zachte gekleurde cirkel met emoji erop
+  ctx.beginPath();
+  ctx.fillStyle = object.kleur;
+  ctx.globalAlpha = 0.35;
+  ctx.arc(object.x * CEL + CEL / 2, object.y * CEL + CEL / 2, CEL / 2 + 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.font = "18px serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(object.emoji, object.x * CEL + CEL / 2, object.y * CEL + CEL / 2 + 1);
+
+  // Slang: zwart lijf, oranje kop (MIRAS-huisstijl)
+  slang.forEach((deel, i) => {
+    ctx.fillStyle = i === 0 ? "#EA5B0C" : "#000000";
+    const m = i === 0 ? 1 : 2; // kop iets groter dan het lijf
+    ctx.beginPath();
+    ctx.roundRect(deel.x * CEL + m, deel.y * CEL + m, CEL - m * 2, CEL - m * 2, 6);
+    ctx.fill();
+  });
+}
+
+/* ===== Eén stap in het spel ===== */
+function stap() {
+  richting = volgendeRichting;
+  const kop = { x: slang[0].x + richting.x, y: slang[0].y + richting.y };
+
+  // Botsing met de rand of met jezelf: game over
+  if (
+    kop.x < 0 || kop.x >= KOLOMMEN ||
+    kop.y < 0 || kop.y >= RIJEN ||
+    slang.some(s => s.x === kop.x && s.y === kop.y)
+  ) {
+    return gameOver();
+  }
+
+  slang.unshift(kop);
+
+  // Object gevangen: punten erbij, slang groeit (staart blijft staan)
+  if (kop.x === object.x && kop.y === object.y) {
+    score += object.punten;
+    gevangen++;
+    scoreEl.textContent = score;
+    toonFeedback(`${object.emoji} ${object.bericht} +${object.punten}`);
+    controleerLevel();
+    nieuwObject();
+  } else {
+    slang.pop(); // niets gevangen: staart schuift mee
+  }
+
+  teken();
+}
+
+/* ===== Spel starten ===== */
+function start() {
+  slang = [{ x: 12, y: 12 }, { x: 11, y: 12 }, { x: 10, y: 12 }];
+  richting = { x: 1, y: 0 };
+  volgendeRichting = richting;
+  score = 0;
+  gevangen = 0;
+  level = 1;
+  scoreEl.textContent = 0;
+  levelEl.textContent = 1;
+  nieuwObject();
+  teken();
+
+  startscherm.classList.add("verborgen");
+  gameoverscherm.classList.add("verborgen");
+  bezig = true;
+  toonFeedback("Daar gaan we. Laat MIRAS groeien!");
+
+  clearInterval(timer);
+  timer = setInterval(stap, LEVELS[0].snelheid);
+}
+
+/* ===== Game over ===== */
+function gameOver() {
+  bezig = false;
+  clearInterval(timer);
+
+  if (score > topscore) {
+    topscore = score;
+    topscoreEl.textContent = topscore;
+    gameoverTitel.textContent = "Nieuwe topscore!";
+    gameoverTekst.textContent = `Jij kent MIRAS door en door. Je haalde ${score} punten en bereikte level ${level}.`;
+  } else {
+    gameoverTitel.textContent = "Oeps, gebotst.";
+    gameoverTekst.textContent = `Ook groeien heeft zo zijn groeipijnen. Je haalde ${score} punten in level ${level}.`;
+  }
+
+  gameoverscherm.classList.remove("verborgen");
+}
+
+/* ===== Besturing met de pijltjestoetsen ===== */
+document.addEventListener("keydown", (e) => {
+  const nieuw = {
+    ArrowUp:    { x: 0, y: -1 },
+    ArrowDown:  { x: 0, y: 1 },
+    ArrowLeft:  { x: -1, y: 0 },
+    ArrowRight: { x: 1, y: 0 }
+  }[e.key];
+
+  if (!nieuw) return;
+  e.preventDefault(); // voorkomt scrollen van de pagina
+
+  // Niet in één keer omkeren in de eigen lengte
+  if (bezig && (nieuw.x !== -richting.x || nieuw.y !== -richting.y)) {
+    volgendeRichting = nieuw;
+  }
+});
+
+/* ===== Knoppen ===== */
+document.getElementById("startknop").addEventListener("click", start);
+document.getElementById("opnieuwknop").addEventListener("click", start);
+</script>
+</body>
+</html>
